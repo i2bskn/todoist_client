@@ -22,6 +22,7 @@ module TodoistClient
     module Paths
       UNCOMPLETED = [:get, "/API/getUncompletedItems"]
       COMPLETED = [:get, "/API/getCompletedItems"]
+      ALL_COMPLETED = [:get, "/API/getAllCompletedItems"]
       FIND = [:get, "/API/getItemsById"]
       ADD = [:get, "/API/addItem"]
       UPDATE = [:get, "/API/updateItem"]
@@ -31,59 +32,87 @@ module TodoistClient
     end
 
     def initialize(params = nil)
-      set_params(params) if params
+      case
+      when params.is_a?(String)
+        @content = params
+      when params.is_a?(Hash)
+        set_params(params)
+      end
     end
 
     def save
       if id
         json = self.class.request *Paths::UPDATE, {
-          id: id,
-          content: content
-        }
+          id: @id, # required
+          content: @content,
+          priority: @priority,
+          indent: @indent,
+          item_order: @item_order,
+          collapsed: @collapsed
+        }.select {|k,v| !v.nil?}
       else
         json = self.class.request *Paths::ADD, {
-          content: content,
-          project_id: project_id
-        }
+          content: @content, # required
+          project_id: @project_id,
+          date_string: @date_string,
+          priority: @priority,
+          indent: @indent,
+          item_order: @item_order
+        }.select {|k,v| !v.nil?}
       end
       set_params(json)
+      self
     end
 
     def delete
-      self.class.request *Paths::DELETE, {ids: JSON.generate([id])} if id
+      with_remote_object do
+        self.class.request *Paths::DELETE, {ids: JSON.generate([id])}
+      end
     end
 
     def complete
-      self.class.request *Paths::COMPLETE, {ids: JSON.generate([id])} if id
+      with_remote_object do
+        self.class.request *Paths::COMPLETE, {ids: JSON.generate([id])}
+      end
     end
 
     def uncomplete
-      self.class.request *Paths::UNCOMPLETE, {ids: JSON.generate([id])} if id
+      with_remote_object do
+        self.class.request *Paths::UNCOMPLETE, {ids: JSON.generate([id])}
+      end
     end
 
-    def set_params(params)
-      params.each do |k,v|
-        self.send "#{k}=", v if self.respond_to? "#{k}="
-      end
+    def finished?
+      checked == 1
     end
 
     class << self
-      def uncompleted(project_id)
-        request(*Paths::UNCOMPLETED, {project_id: project_id}).map { |item|
-          self.new(item)
-        }
+      def uncompleted(project)
+        project_id = project.is_a?(Project) ? project.id : project
+        request(*Paths::UNCOMPLETED, {project_id: project_id}).map {|item| self.new(item)}
       end
 
-      def completed(project_id)
-        request(*Paths::COMPLETED, {project_id: project_id}).map { |item|
-          self.new(item)
+      def completed(project)
+        project_id = project.is_a?(Project) ? project.id : project
+        request(*Paths::COMPLETED, {project_id: project_id}).map {|item| self.new(item)}
+      end
+
+      # only premium user
+      def completed_items(project = nil)
+        project_id = project.is_a?(Project) ? project.id : project
+        request(*Paths::ALL_COMPLETED, {project_id: project_id})["items"].map {|item|
+          CompletedItem.new(item)
         }
       end
 
       def find(ids)
-        request(*Paths::FIND, {ids: json_ids(ids)}).map { |item|
-          self.new(item)
-        }
+        items = request(*Paths::FIND, {ids: json_ids(ids)}).map {|item| self.new(item)}
+        # return nil or Item object if item does not exist multiple.
+        items.size > 1 ? items : items.first
+      end
+
+      def create(params)
+        self.new(params).save
       end
 
       def delete_all(ids)

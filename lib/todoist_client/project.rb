@@ -22,57 +22,70 @@ module TodoistClient
       ADD = [:get, "/API/addProject"]
       UPDATE = [:get, "/API/updateProject"]
       DELETE = [:get, "/API/deleteProject"]
-      # ARCHIVE = [:get, "/API/archiveProject"]
-      # UNARCHIVE = [:get, "/API/unarchiveProject"]
+      ARCHIVE = [:get, "/API/archiveProject"]
+      UNARCHIVE = [:get, "/API/unarchiveProject"]
     end
 
     def initialize(params = nil)
-      set_params(params) if params
+      case
+      when params.is_a?(String)
+        @name = params
+      when params.is_a?(Hash)
+        set_params(params)
+      end
     end
 
     def save
       if id
         json = self.class.request *Paths::UPDATE, {
-          project_id: id,
-          name: name,
-          color: color,
-          indent: indent,
-          order: item_order
-        }
+          project_id: @id, # required
+          name: @name,
+          color: @color,
+          indent: @indent,
+          order: @item_order
+        }.select {|k,v| !v.nil?}
       else
         json = self.class.request *Paths::ADD, {
-          name: name,
-          color: color,
-          indent: indent,
-          order: item_order
-        }
+          name: @name, # required
+          color: @color,
+          indent: @indent,
+          order: @item_order
+        }.select {|k,v| !v.nil?}
       end
       set_params(json)
+      self
     end
 
     def delete
-      self.class.request *Paths::DELETE, {project_id: id} if id
+      with_remote_object do
+        self.class.request *Paths::DELETE, {project_id: id}
+      end
     end
 
-    # def archive
-    #   self.class.request *Paths::ARCHIVE, {project_id: id} if id
-    # end
+    # only premium user
+    def archive
+      with_remote_object do
+        self.class.request *Paths::ARCHIVE, {project_id: id}
+      end
+    end
 
-    # def unarchive
-    #   self.class.request *Paths::UNARCHIVE, {project_id: id} if id
-    # end
+    # only premium user
+    def unarchive
+      with_remote_object do
+        self.class.request *Paths::UNARCHIVE, {project_id: id}
+      end
+    end
 
     def uncompleted_items
-      Item.uncompleted(id) if id
+      with_remote_object do
+        Item.uncompleted(id)
+      end
     end
 
+    # only premium user
     def completed_items
-      Item.completed(id) if id
-    end
-
-    def set_params(params)
-      params.each do |k,v|
-        self.send "#{k}=", v if self.respond_to? "#{k}="
+      with_remote_object do
+        Item.completed_items(id)
       end
     end
 
@@ -85,8 +98,8 @@ module TodoistClient
         self.new(request(*Paths::FIND, {project_id: id}))
       end
 
-      def create(name)
-        self.new(name).save
+      def create(params)
+        self.new(params).save
       end
     end
   end

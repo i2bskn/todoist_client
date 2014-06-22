@@ -6,15 +6,27 @@ module TodoistClient
       klass.extend ClassMethods
     end
 
+    def with_remote_object(&block)
+      if id
+        block.call if block_given?
+      else
+        raise RemoteObjectNotExists
+      end
+    end
+
+    def set_params(params)
+      params.each do |k,v|
+        self.send "#{k}=", v if self.respond_to? "#{k}="
+      end
+    end
+
     module ClassMethods
       def request(method, endpoint, params = nil)
-        p "#{BASE_URI}#{endpoint}"
-        p query_string(params)
         JSON.load RestClient.send(method, "#{BASE_URI}#{endpoint}", query_string(params))
       end
       
       def query_string(params = nil)
-        raise NoApiToken, "API Token not find" unless TodoistClient.api_token
+        raise NoApiToken unless TodoistClient.api_token
         params ||= {}
         {
           params: {
